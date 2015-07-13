@@ -1,59 +1,86 @@
-# todo patch npp  replace by space by defaut in python
-# 
 import unittest
 from event import Event
+from common import set_minlength
 
-class RoutingTables():
-    def __init__(self, key, kbuckets=[]):
-        self.key = key
+class Id(object):
+    def __init__(self, id):
+        self.id = id #string
+        
+    def distance(self, otherid):
+        minlen = min(len(self.id), len(otherid.id))
+        nb_equal = 0
+        for i in range(minlen):
+            if self.id[i] == otherid.id[i]:
+                nb_equal += 1
+            else:
+                return nb_equal
+        return nb_equal
+    
+    def __repr__(self):
+        return str(self.id)
+
+class Peer(object):
+    def __init__(self, id, addr, lastseen=None):
+        self.id = id
+        self.addr = addr
+        self.lastseen = lastseen
+
+    def __repr__(self):
+        return "<Peer id:%s addr:%s>" % (self.id, self.addr)
+
+class KBucket():
+    def __init__(self, peers=None):
+        self.peers = peers or []
+
+    def add(self, peer):
+        self.peers.append(peer)
+
+    def find_closest(self, id, nb=10):
+        peerdists = sorted([(p.id.distance(id), p) for p in self.peers], key=lambda (dist, peer) : dist, reverse=True)
+        return [peer for dist, peer in peerdists[:nb]]
+
+class RoutingTables(object):
+    def __init__(self, id=None, kbuckets=[]):
+        self.id = id
         self.kbuckets = kbuckets
 
     def find_closest(self, key, nb=10):
-        pass
+        results = []
+        dist = min(self.id.distance(key), len(self.kbuckets)-1)
+        for i in range(dist, -1, -1):
+            closests = self.kbuckets[i].find_closest(key, nb)
+            results += closests
+            nb -= len(closests)
+            if nb == 0:
+                break
+        return results
 
-class Network():
-    pass
+    def add(self, peer):
+        dist = self.id.distance(peer.id)
+        set_minlength(self.kbuckets, dist+1, lambda: KBucket())
+        self.kbuckets[dist].add(peer)
     
-class SimluatedNetwork(Network):
-    def __init__(self, my_addr, addresses):
-        self.addresses = addresses
-        self.my_addr = my_addr
-        self.ON_MESSAGE = Event()
+    def get_buckets(self):
+        result = []
+        for bucket in self.kbuckets:
+            res = {}
+            for peer in bucket.peers:
+                res[peer.id.id] = peer.addr
+            result.append(res)
+        return result
     
     @classmethod
-    def create(cls, size):
-        my_addr = size
-        addresses = range(size)
-        return cls(my_addr, addresses)
-        
-    def getaddr(self):
-        return self.my_addr
-    
+    def from_idstrings(cls, id, peer_idaddr):
+        r = cls(Id(id))
+        for id, addr in peer_idaddr.iteritems():
+            r.add(Peer(Id(id), addr))
+        return r
+
 class Message():
     def __init__(self, msgtype, params, id):
         self.msgtype = msgtype
         self.params = params
         self.id = id
-
-
-class NetworkNode():
-    """ keep track of requests send to other nodes """
-    def __init__(self, network, request_handler):
-        self.network = network
-        self.requests_in_progress = {}
-        self.addr = self.network.getaddr()
-        self.network.ON_MESSAGE.subscribe(self._on_message)
-        self.request_handler = request_handler
-        
-    def request(self, addr, request):
-        self.network.send(addr, request)
-        id = makeid()
-        f = Future()
-        self.requests_in_progress[id] = (f, request)
-        return f
-    
-    def _on_message(self, from_addr, message):
-        pass# set future as completed
         
 class ValueCache():
     def __init__(self):
@@ -74,6 +101,7 @@ class DhtNode():
         self.id = id
         self.searches = searches
         self.value_cache = value_cache
+        self.network_node.ON_REQUEST.subscribe(self.handle_request)
         
     def search(self, key):
         self.searches.append(Search(key))
@@ -89,12 +117,28 @@ class DhtNode():
         
         
 class DHTTests(unittest.TestCase):
+    
+    def test_RoutingTables_GetBuckets_ReturnsBuckets(self):
+        r = RoutingTables.from_idstrings("101", {"110" : 1 , "011" : 2, "000" : 3, "100" : 4, "011" : 5})
+        
+        self.assertEquals(r.get_buckets(), [{'011': 5, '000': 3}, {'110': 1}, {'100': 4}])        
+
+    def test_RoutingTables_FindClosests_ReturnsClosests(self):
+        r = RoutingTables.from_idstrings("101", {"110" : 1 , "011" : 2, "000" : 3, "100" : 4, "011" : 5})
+        
+        print r.find_closest(Id("010"))     
+        print r.find_closest(Id("100"), 1 )     
+        
+
+    """
     def test_1(self):
+        n1 = DhtNode(RoutingTables())
         n1 = DhtNode()
 
         n1.search("k1")
         
         self.assertEquals(n1.list_searches(), [Search("k1")])
+    """
 
 if __name__ == '__main__':
     unittest.main()
