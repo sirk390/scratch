@@ -7,7 +7,7 @@ import mock
 from futures import then
 import traceback
 
-class NetworkHandler():
+class NetworkHandler(object):
     def __init__(self):
         self.ON_MESSAGE = Event()
     def getaddr(self):
@@ -25,7 +25,7 @@ class FakeNetworkHandler(NetworkHandler):
     def send(self, addr, data):
         return self.fake_network.routemessage(self.my_addr, addr, data)
 
-class FakeNetwork():
+class FakeNetwork(object):
     def __init__(self):
         self.handlers = {}
         
@@ -41,6 +41,7 @@ class FakeNetwork():
     
 
 class NetworkNode(object):
+    
     MAX_REQUEST_ID = 1000000
     """ keep track of requests send to other nodes """
     def __init__(self, network_handler, random=SystemRandom()):
@@ -66,13 +67,11 @@ class NetworkNode(object):
         return f
 
     def reply(self, reply_future):
-        print "replying...."
         try:
             result = reply_future.result()
         except:
             traceback.print_exc()
         from_addr, request, id = self.requests_received[reply_future] 
-        print "replying....2", id
         self._send_reply(from_addr, result, id)
     
     def _send_request(self, addr, request, id):
@@ -80,7 +79,6 @@ class NetworkNode(object):
         self.network_handler.send(addr, data)
 
     def _send_reply(self, addr, reply, id):
-        print "sending reply", addr, reply, id
         data = json.dumps({"reply": reply, "id": id})
         self.network_handler.send(addr, data)
         
@@ -90,7 +88,6 @@ class NetworkNode(object):
             reply_future = Future()
             self.requests_received[reply_future] = (from_addr, data["request"], data.get("id"))
             self.ON_REQUEST.fire(reply_future, from_addr, data["request"], id)
-            print "-----------Revieved request", data
             reply_future.add_done_callback(self.reply)
             #then(reply_future, self.reply)
         if "reply" in data:
@@ -107,8 +104,6 @@ class NetworkNode(object):
                 return
             future, request = self.requests_sent[data["id"]]
             future.set_result(data["reply"])
-
-        print "%s: on_message: %s" % (self.addr, data)
         
 class NetworkTests(unittest.TestCase):
     def test_NetworkNode_NodeSendsARequestToAnother_OnRequestIsFired(self):
