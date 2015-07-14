@@ -109,6 +109,11 @@ class Message(object):
         self.params = params
         self.id = id
 
+
+class ValueNotFound(Exception):
+    pass
+
+
 class Search(object):
     def __init__(self, key, routing_tables, network_node, nb_parallel=3, nb_pool=10):
         self.key = key
@@ -132,6 +137,9 @@ class Search(object):
         self.canditate_peers |= set(closest)
         
     def process_search(self):
+        if not self.completed.done() and len(self.canditate_peers) == 0 and len(self.request_in_progress) == 0:
+            self.completed.set_exception(ValueNotFound("unable to find value"))
+            return 
         while self.canditate_peers and len(self.request_in_progress) <= self.nb_parallel:
             p = self.canditate_peers.pop()
             self.requested_peers.add(p)
@@ -229,7 +237,7 @@ class DHTTests(unittest.TestCase):
 
         print r.find_closest(Id("010"))
         print r.find_closest(Id("100"), 1 )
-
+        
     def test_Search_SimpleNetwork1HopForResult_ReturnsSearchedValue(self):
         network = FakeDHTNetwork.create_from_desc({1 : ("001", {1, 2, 4, 6}, {}),
                                              2 : ("111", {3, 4}, {}),
@@ -244,6 +252,20 @@ class DHTTests(unittest.TestCase):
         value = future.result()
         
         self.assertEquals(value, "hello")
+        
+    def test_Search_PeerUnjoinable_RaisesException(self):
+        network = FakeDHTNetwork.create_from_desc({1 : ("001", {2, 4}, {}),
+                                             2 : ("111", {4}, {}),
+                                             3 : ("110", {5}, {"110" : "hello"}),
+                                             4 : ("000", {1, 2, 5}, {}),
+                                             5 : ("010", {4}, {})})
+        dhtnode = network.dhtnodes[1]
+        search = Search(Id("110"), dhtnode.routing_tables, dhtnode.network_node)
+        future = search.start()
+        
+        with self.assertRaises(ValueNotFound):
+            future.result()
+        
 """
 TODO: 
     - Support errors in NetworkNode replies 
