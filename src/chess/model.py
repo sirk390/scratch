@@ -255,6 +255,9 @@ class UnitTests(unittest.TestCase):
     def test_PawnAdvances_WhitePawnOnE2_IsAllowedToAdvanceOneSquare(self):
         assert Rules.allowed({"e2" : Piece(PAWN, WHITE)}, "e2e3")
 
+    def test_PawnCaptures_WhitePawnOnE2_CannotGotoD3(self):
+        assert not Rules.allowed({"e2" : Piece(PAWN, WHITE)}, "e2d3")
+
     def test_PawnAdvances_WhitePawnOnE2_IsAllowedToAdvanceTwoSquares(self):
         assert Rules.allowed({"e2" : Piece(PAWN, WHITE)}, "e2e4")
         
@@ -279,6 +282,10 @@ class UnitTests(unittest.TestCase):
     def test_PawnAdvances_BlackPawnOnC4_CanNotAdvance2Square(self):
         assert not Rules.allowed({"c4" : Piece(PAWN, BLACK)}, "c4c2")
         
+    def test_PawnCaptures_WhitePawnOnE2WithBlackPawnOnD3_IsAllowedToTakeD3(self):
+        assert Rules.allowed({"e2" : Piece(PAWN, WHITE),
+                              "d3" : Piece(PAWN, BLACK),}, "e2d3")
+
 
 
 if __name__ == "__main__":
