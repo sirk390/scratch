@@ -10,12 +10,17 @@ class Color(object):
         self.lastrow = lastrow
         self.advance = advance
         
+    def opposite(self):
+        return opposite_color(self)
+        
 PIECES_SHORTNAMES = {PAWN : "P", KNIGHT: "K", BISHOP: "B", ROOK: "R", QUEEN: "Q", KING : "K"}
         
 #BLACK, WHITE = COLORS = range(2)
 #COLOR_SHORTNAMES = {BLACK:"b", WHITE:"w"}
 BLACK = Color("b", 7, 0, -1)
 WHITE = Color("w", 0, 7, 1)
+def opposite_color(color):
+    return BLACK if color == WHITE else WHITE
 
 class Piece(object):
     def __init__(self, type, color):
@@ -134,7 +139,7 @@ class Position(object):
             return Position.from_str(pos)
         if type(pos) is tuple:
             return Position.from_str(*pos)
-        if type(pos) is Position:
+        if isinstance(pos, Position):
             return pos
         raise Exception("Unknown position type")
     
@@ -147,13 +152,31 @@ class Position(object):
     def __hash__(self):
         return hash((self.x, self.y))
     
+class RelPosition(Position):
+    def __init__(self, x, y, color):
+        super(RelPosition, self).__init__(x, y)
+        self.color = color
+        
+    def lastrow(self):
+        return self.y == self.color.lastrow
+    
+    def firstrow(self):
+        return self.y == self.color.firstrow
+
+    def secondrow(self):
+        return self.y == self.color.firstrow + self.color.advance
+        
+    def advance(self, advance=0, sideway=0):    
+        return RelPosition(self.x + self.color.advance * sideway, self.y + self.color.advance * advance, self.color)
+
 class Game(object):
     def __init__(self, board=None, turn=WHITE, rules=None):
         self.board = board or Board()
         self.turn = turn
         self.rules = rules
 
-SIMPLE, SIMPLETAKE, ROQUE, PROMOTE, EN_PASSANT = MOVE_TYPES = range(5)
+SIMPLE, TAKE, ROQUE, PROMOTE, EN_PASSANT = MOVE_TYPES = range(5)
+# what about taking as a pawn on last row? is thie promote?
 
 class BoardChange(object):
     pass
@@ -163,16 +186,19 @@ class Move(object):
         self.type = type
 
     @staticmethod
-    def from_str(str):
+    def from_str(str, board):
         if len(str) == 4:
             return BasicMove.from_str(str)
-    
+        if len(str) == 5:
+            return TakeMove.from_str(str, board)
+
 
 class BasicMove(Move):
-    def __init__(self, pos1, pos2):
+    def __init__(self, pos1, pos2, take=[]):
         super(BasicMove, self).__init__(SIMPLE)
         self.pos1 = pos1
         self.pos2 = pos2
+        self.take =  take
         
     @classmethod
     def from_str(cls, str):
@@ -191,20 +217,31 @@ class BasicMove(Move):
 
 
 class Rules(object):
-    def pawnmoves(self, pos, pawn):
+    def pawnmoves(self, pos, board, pawn):
         moves = []
-        if pos.y != pawn.color.lastrow:
-            moves.append(BasicMove(pos, Position(pos.x, pos.y+pawn.color.advance)))
-        if pos.y == pawn.color.firstrow + pawn.color.advance:
-            moves.append(BasicMove(pos, Position(pos.x, pos.y+2*pawn.color.advance)))
+        if not pos.lastrow(): 
+            moves.append(BasicMove(pos, pos.advance(1)))
+        if pos.secondrow():
+            moves.append(BasicMove(pos, pos.advance(2)))
+        if pos.x != 0 and not pos.lastrow():
+            square = pos.advance(1, -1)
+            piece = board[square]
+            if piece is not None and piece.color == pawn.color.opposite():
+                moves.append(BasicMove(pos, square, piece))
+        if pos.x != 7 and pos.y != pawn.color.lastrow:
+            square = pos.advance(1, 1)
+            piece = board[square]
+            if piece is not None and piece.color == pawn.color.opposite():
+                moves.append(BasicMove(pos, square, piece))
         return moves
     
     def genmoves(self, board, player):
         moves = []
         for pos, piece in board.iterpieces():
             if piece.color == player:
+                relpos = RelPosition(pos.x, pos.y, piece.color)
                 if piece.type == PAWN:
-                    moves += self.pawnmoves(pos, piece)
+                    moves += self.pawnmoves(relpos, board, piece)
         return moves
     
     def is_allowed(self, board, move, player):
@@ -213,7 +250,7 @@ class Rules(object):
     @staticmethod
     def allowed(boarddef, movestr):
         board= Board.setup(boarddef)
-        move = Move.from_str(movestr)
+        move = Move.from_str(movestr, board)
         rules = Rules()
         return move in rules.genmoves(board, board[move.pos1].color)
         
@@ -266,7 +303,24 @@ class UnitTests(unittest.TestCase):
                               "d2d4")
     def test_PawnAdvances_WhitePawnOnF6_CanNotAdvance2Squares(self):
         assert not Rules.allowed({"f6" : Piece(PAWN, BLACK)}, "f6f8")
+
+    def test_PawnAdvances_WhitePawnOnF3WithWhitePieceInFront_CanNotAdvance(self):
+        assert not Rules.allowed({"f3" : Piece(PAWN, WHITE),
+                                  "f4" : Piece(ROOK, WHITE),
+                                  }, "f3f4")
+
+    def test_PawnAdvances_WhitePawnOnF3WithBlackPieceInFront_CanNotAdvance(self):
+        assert not Rules.allowed({"f3" : Piece(PAWN, WHITE),
+                                  "f4" : Piece(ROOK, BLACK),
+                                  }, "f3f4")
+
+    def test_PawnAdvances_WhitePawnOnF7_CanNotAdvance(self):
+        assert not Rules.allowed({"f7" : Piece(PAWN, WHITE)}, "f7f8")
         
+    def test_PawnAdvances_BlackPawnOnF1_CanNotAdvance(self):
+        assert not Rules.allowed({"f2" : Piece(PAWN, BLACK)}, "f2f1")
+        
+                
     def test_PawnAdvances_BlackPawnOnE2_IsNotAllowedToAdvance(self):
         assert not Rules.allowed({"e2" : Piece(PAWN, BLACK)}, "e2e3")
         
@@ -286,6 +340,12 @@ class UnitTests(unittest.TestCase):
         assert Rules.allowed({"e2" : Piece(PAWN, WHITE),
                               "d3" : Piece(PAWN, BLACK),}, "e2d3")
 
+    def test_PawnCaptures_WhitePawnOnE2_CantGoToD3IfThereIsNoPieceThere(self):
+        assert not Rules.allowed({"e2" : Piece(PAWN, WHITE)}, "e2d3")
+
+    def test_PawnCaptures_WhitePawnOnE2WithWhitePawnOnD3_IsNotAllowedItsOwnPawn(self):
+        assert not Rules.allowed({"e2" : Piece(PAWN, WHITE),
+                                  "d3" : Piece(PAWN, WHITE),}, "e2d3")
 
 
 if __name__ == "__main__":
