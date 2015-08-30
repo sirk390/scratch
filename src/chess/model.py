@@ -179,10 +179,10 @@ class RelPosition(Position):
         return RelPosition(self.x + self.color.advance * sideway, self.y + self.color.advance * advance, self.color)
 
 class Game(object):
-    def __init__(self, board=None, turn=WHITE, rules=None):
+    def __init__(self, board=None, turn=WHITE, lastmove=None):
         self.board = board or Board()
         self.turn = turn
-        self.rules = rules
+        self.lastmove = lastmove
 
 SIMPLE, TAKE, ROQUE, PROMOTE, EN_PASSANT = MOVE_TYPES = range(5)
 # what about taking as a pawn on last row? is thie promote?
@@ -202,6 +202,12 @@ class Move(object):
 
     @staticmethod
     def from_str(str, board):
+        """
+            e5e6: move to e6
+            e5xd6: take on d6
+            e7xe8=Q: promote to Queen on e8
+            e5d6xd5 : take en passant pawn in d5 and go to d6 
+        """
         if len(str) == 4:
             return Move(Position.from_str(str[:2]), Position.from_str(str[2:]))
         elif len(str) == 5 and str[2] == 'x':
@@ -210,6 +216,8 @@ class Move(object):
             if str[5] not in PIECES_FROM_CHAR:
                 raise ChessNotationSyntaxError("no such piece: " + str[5])
             return Move(Position.from_str(str[:2]), Position.from_str(str[2:4]), promote=PIECES_FROM_CHAR[str[5]])
+        elif len(str) == 7 and str[4] == 'x':
+            return Move(Position.from_str(str[:2]), Position.from_str(str[2:4]), take=Position.from_str(str[5:]))
         
     def __repr__(self):
         return "%s%s" % (self.pos1, self.pos2)
@@ -252,24 +260,25 @@ class Rules(object):
         self.addsimplemove(pos, board, -1, 1, moves, take=True, promote=pos.prevlastrow())
         return moves
     
-    def genmoves(self, board, player):
+    def genmoves(self, game):
         moves = []
-        for pos, piece in board.iterpieces():
-            if piece.color == player:
+        for pos, piece in game.board.iterpieces():
+            if piece.color == game.player:
                 relpos = RelPosition(pos.x, pos.y, piece.color)
                 if piece.type == PAWN:
-                    moves += self.pawnmoves(relpos, board, piece)
+                    moves += self.pawnmoves(relpos, game.board, piece)
         return moves
     
     def is_allowed(self, board, move, player):
         return move in self.genmoves(board, player)
     
     @staticmethod
-    def allowed(boarddef, movestr):
+    def allowed(boarddef, movestr, lastmove=None):
         board= Board.setup(boarddef)
         move = Move.from_str(movestr, board)
         rules = Rules()
-        return move in rules.genmoves(board, board[move.pos1].color)
+        game = Game(turn=board[move.pos1].color, lastmove=lastmove)
+        return move in rules.genmoves(game)
         
 class UnitTests(unittest.TestCase):
     def test_Board_AddPieceOnEmptySquare_GetReturnsPiece(self):
@@ -382,10 +391,11 @@ class UnitTests(unittest.TestCase):
         assert Rules.allowed({"e7" : Piece(PAWN, WHITE),
                               "d8" : Piece(KNIGHT, BLACK)}, "e7d8=Q")
         
-    def test_PawnPromote_WhitePawnOnE7AndWhitePieceOnD8_IsNotAllowedToTakeAndPromoteOnD8(self):
-        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE),
-                                  "d8" : Piece(KNIGHT, WHITE)}, "e7d8=Q")
-
+    def test_PawnEnPassant_WhitePawnOnE5LastMoveIsD7S5_IsAllowedToTakeD6(self):
+        assert Rules.allowed({"e5" : Piece(PAWN, WHITE),
+                              "d5": Piece(PAWN, BLACK)}, "e5d6xd5", lastmove="d7d5")
+        
+  
 
 if __name__ == "__main__":
     unittest.main()
