@@ -13,8 +13,9 @@ class Color(object):
     def opposite(self):
         return opposite_color(self)
         
-PIECES_SHORTNAMES = {PAWN : "P", KNIGHT: "K", BISHOP: "B", ROOK: "R", QUEEN: "Q", KING : "K"}
-        
+PIECES_SHORTNAMES = {PAWN : "P", KNIGHT: "N", BISHOP: "B", ROOK: "R", QUEEN: "Q", KING : "K"}
+PIECES_FROM_CHAR = dict((v, k) for k,v in PIECES_SHORTNAMES.iteritems())   
+    
 #BLACK, WHITE = COLORS = range(2)
 #COLOR_SHORTNAMES = {BLACK:"b", WHITE:"w"}
 BLACK = Color("b", 7, 0, -1)
@@ -92,7 +93,6 @@ class Board(object):
     def setup(cls, pos_pieces):
         board = cls()
         for pos, piece in pos_pieces.iteritems():
-            print "--", pos, piece
             board.add(pos, piece)
         return board
     
@@ -105,11 +105,17 @@ class Board(object):
 
 class ChessNotationSyntaxError(Exception):
     pass
-    
+class InvalidPosition(Exception):
+    pass
+
 class Position(object):
     COLS = "abcdefgh"
     ROWS = "12345678"
     def __init__(self, x, y):
+        if x < 0 or  x > 7:
+            raise InvalidPosition()
+        if y < 0 or  y > 7:
+            raise InvalidPosition()
         self.x = x
         self.y = y
         
@@ -159,7 +165,10 @@ class RelPosition(Position):
         
     def lastrow(self):
         return self.y == self.color.lastrow
-    
+
+    def prevlastrow(self):
+        return self.y == self.color.lastrow - self.color.advance
+        
     def firstrow(self):
         return self.y == self.color.firstrow
 
@@ -181,58 +190,66 @@ SIMPLE, TAKE, ROQUE, PROMOTE, EN_PASSANT = MOVE_TYPES = range(5)
 class BoardChange(object):
     pass
 
+
 class Move(object):
-    def __init__(self, type):
-        self.type = type
+    def __init__(self, pos1, pos2, take=[], takepos=None, promote=[], moves=[]):
+        self.pos1 = pos1
+        self.pos2 = pos2
+        self.take = take
+        self.takepos = takepos
+        self.promote = promote
+        self.moves = moves
 
     @staticmethod
     def from_str(str, board):
         if len(str) == 4:
-            return BasicMove.from_str(str)
-        if len(str) == 5:
-            return TakeMove.from_str(str, board)
-
-
-class BasicMove(Move):
-    def __init__(self, pos1, pos2, take=[]):
-        super(BasicMove, self).__init__(SIMPLE)
-        self.pos1 = pos1
-        self.pos2 = pos2
-        self.take =  take
+            return Move(Position.from_str(str[:2]), Position.from_str(str[2:]))
+        elif len(str) == 5 and str[2] == 'x':
+            pass
+        elif len(str) == 6 and str[4] == '=':
+            if str[5] not in PIECES_FROM_CHAR:
+                raise ChessNotationSyntaxError("no such piece: " + str[5])
+            return Move(Position.from_str(str[:2]), Position.from_str(str[2:4]), promote=PIECES_FROM_CHAR[str[5]])
         
-    @classmethod
-    def from_str(cls, str):
-        return cls(Position.from_str(str[:2]), Position.from_str(str[2:]))
-
     def __repr__(self):
         return "%s%s" % (self.pos1, self.pos2)
 
     def __eq__(self, other):
-        return (type(other) is BasicMove and 
-                self.pos1 == other.pos1 and
-                self.pos2 == other.pos2)
+        return (self.pos1 == other.pos1 and
+                self.pos2 == other.pos2 and
+                self.promote == other.promote)
 
     def __hash__(self):
         return hash((self.pos1, self.pos2))
 
 
 class Rules(object):
+    def addsimplemove(self, pos, board, dx, dy, moves, move=False, take=False, promote=False):
+        try:
+            square = pos.advance(dy, dx)
+        except InvalidPosition:
+            return
+        piece = board[square]
+        if piece is None and move:
+            if not promote:
+                moves.append(Move(pos, square))
+            else:
+                for p in set([ROOK, QUEEN, KNIGHT, BISHOP]):
+                    moves.append(Move(pos, square, promote=p))
+        if piece is not None and take and piece.color == board[pos].color.opposite():
+            if not promote:
+                moves.append(Move(pos, square, take=piece))
+            else:
+                for p in set([ROOK, QUEEN, KNIGHT, BISHOP]):
+                    moves.append(Move(pos, square, take=piece, promote=p))
+                
     def pawnmoves(self, pos, board, pawn):
         moves = []
-        if not pos.lastrow(): 
-            moves.append(BasicMove(pos, pos.advance(1)))
+        self.addsimplemove(pos, board, 0, 1, moves, move=True, promote=pos.prevlastrow())
         if pos.secondrow():
-            moves.append(BasicMove(pos, pos.advance(2)))
-        if pos.x != 0 and not pos.lastrow():
-            square = pos.advance(1, -1)
-            piece = board[square]
-            if piece is not None and piece.color == pawn.color.opposite():
-                moves.append(BasicMove(pos, square, piece))
-        if pos.x != 7 and pos.y != pawn.color.lastrow:
-            square = pos.advance(1, 1)
-            piece = board[square]
-            if piece is not None and piece.color == pawn.color.opposite():
-                moves.append(BasicMove(pos, square, piece))
+            self.addsimplemove(pos, board, 0, 2, moves, move=True)
+        self.addsimplemove(pos, board, 1, 1, moves, take=True, promote=pos.prevlastrow())
+        self.addsimplemove(pos, board, -1, 1, moves, take=True, promote=pos.prevlastrow())
         return moves
     
     def genmoves(self, board, player):
@@ -346,6 +363,28 @@ class UnitTests(unittest.TestCase):
     def test_PawnCaptures_WhitePawnOnE2WithWhitePawnOnD3_IsNotAllowedItsOwnPawn(self):
         assert not Rules.allowed({"e2" : Piece(PAWN, WHITE),
                                   "d3" : Piece(PAWN, WHITE),}, "e2d3")
+
+    def test_PawnPromote_WhitePawnOnE7_IsAllowedToPromoteOnE8(self):
+        assert Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=Q")
+        assert Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=R")
+        assert Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=B")
+        assert Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=N")
+        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=P")
+        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE)}, "e7e8=K")
+
+    def test_PawnPromote_WhitePawnOnE7WithPieceOnE8_CannotPromoteOnE8(self):
+        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE),
+                                  "e8" : Piece(KNIGHT, WHITE)}, "e7e8=Q")
+        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE),
+                                  "e8" : Piece(KNIGHT, BLACK)}, "e7e8=Q")
+
+    def test_PawnPromote_WhitePawnOnE7AndBlackPieceOnD8_IsAllowedToTakeAndPromoteOnD8(self):
+        assert Rules.allowed({"e7" : Piece(PAWN, WHITE),
+                              "d8" : Piece(KNIGHT, BLACK)}, "e7d8=Q")
+        
+    def test_PawnPromote_WhitePawnOnE7AndWhitePieceOnD8_IsNotAllowedToTakeAndPromoteOnD8(self):
+        assert not Rules.allowed({"e7" : Piece(PAWN, WHITE),
+                                  "d8" : Piece(KNIGHT, WHITE)}, "e7d8=Q")
 
 
 if __name__ == "__main__":
