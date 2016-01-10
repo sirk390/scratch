@@ -18,7 +18,7 @@ class LogSimple(object):
     def __init__(self, value=None):
         pass
 
-class Transaction():
+class Transaction(object):
     def __init__(self, operations=None):
         self.operations = operations or []
 
@@ -26,6 +26,7 @@ class Transaction():
 class DictTransaction(Transaction):
     def __init__(self, dct, operations=None):
         self.dct = dct
+        super(DictTransaction, self).__init__()
 
     def set(self, key, value):
         self.operations.append(SetKey(key, value))
@@ -39,20 +40,6 @@ class DictTransaction(Transaction):
 
     def commit(self):
         self.dct.commit(self)
-
-class LogCounter(object):
-    """ keep record of applied tx
-    """
-    def __init__(self, value=0):
-        self.value = value
-        self.applied_txs = deque()
-        self.version = 0
-
-    def apply(self, ops):
-        pass
-    
-    def simulate(self, tx_list, key):
-        pass
 
 class LogDict(object):
     """ keep record of applied tx
@@ -98,7 +85,7 @@ class TransactionalDict(LogDict):
         self.commited ={}
 
     def start(self, tx=None):
-        tx = tx or Transaction(self)
+        tx = tx or DictTransaction(self)
         self.commited[tx] = False
         self.txs.append(tx)
         return tx
@@ -217,19 +204,6 @@ class Test1(unittest.TestCase):
         
 
         pass
-    
-    def test_int(self):
-        i = LogCounter()
-        #tx = i.start()
-        i.apply(Transaction([AddOp(2)]))
-        
-    def test_two_counters(self):
-        # two counters need to synch after applying each a different tx
-        i = LogCounter()
-        #tx = i.start()
-        i.apply(Transaction([AddOp(2)]))
-        
-
         
 
         
