@@ -42,7 +42,7 @@ def logistic_regression_gradient(Theta, X, Y):
 
 
 if __name__ == "__main__":
-    F = 4
+    F = 2
     M = 1000
     def gentest(n=F, m=M):
         X = np.random.rand(m, n)
@@ -55,7 +55,8 @@ if __name__ == "__main__":
     X, Y, factors = gentest()
     print "factors", factors.reshape(F)
     theta_0 = np.zeros(F)
-    #print res_Y.
+    
+    #print res_Y.1
     #exit()
     #f = 
     res = minimize(logistic_regression_cost, 
