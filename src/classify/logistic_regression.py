@@ -2,17 +2,19 @@ import numpy as np
 from itertools import izip
 from gendata import gendata
 from util import softmax
+from classify.util import normalize_rows
 
-np.seterr(all='raise')
+np.seterr(all='raise', under="ignore")
 
 def cost_function(W, x, y):
     """function computes the negative log likelyhood over input dataset 
     """
-    vec = np.dot(x, W);                 
+    m = x.shape[0]                 
+    vec = np.dot(x, W);
     sigmoid_activation = softmax(vec)
-    index = [range(0, np.shape(sigmoid_activation)[0]), y]
+    index = [range(0, m), y]
     p = sigmoid_activation[index]
-    l = -np.mean(np.log(p))
+    l = -np.mean(np.log(p + 0.000001))
     return l
 
 
@@ -26,9 +28,9 @@ def gradients(W, x, y):
     """Gradient of cost function over all examples"""
     vec = np.dot(x, W);                 
     sigmoid_activation = softmax(vec)
-    
+     
     e = [compute_gradients(a, c, b) for a, c, b in izip(sigmoid_activation, y, x)]
-    mean1 = np.mean(e, axis=0)        
+    mean1 = np.sum(e, axis=0)        
     #  mean1 = mean1.T.flatten()
     return mean1
 
@@ -41,10 +43,11 @@ def predict(W, x):
     return np.argmax(values, axis=1)
 
 
-def batch_gradient_descent(X, Y, C, l=1, nbiter=100): 
+def batch_gradient_descent(X, Y, C, l=1, nbiter=10): 
     n = X.shape[1]
     W = np.zeros((n, C)) #n+1, c
     for i in range(nbiter):
+        print cost_function(W, X, Y)
         grads = gradients(W, X, Y)
         W -= grads.T * l
     return predict(W, X)
@@ -62,3 +65,4 @@ if __name__ == '__main__':
     print Y
     Y2 = batch_gradient_descent(X, Y, C, l=1, nbiter=100)
     print Y == Y2
+    print

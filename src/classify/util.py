@@ -6,7 +6,7 @@ def normalize_cols(vect):
 
 
 def normalize_rows(vect):
-    return  vect / column_vector(vect.sum(axis=1))
+    return  vect / (column_vector(vect.sum(axis=1)) + [0.00001])
 
 
 def column_vector(values):
@@ -23,7 +23,15 @@ def sigmoid(X):
 def softmax(vec):
     """ Applyies softmax to each row """
     #substract max for numerical stability, else for large values will get NaNs due to exp
-    vec1 = np.exp(vec - column_vector(-vec.max(axis=1)))
+    #print vec 
+    try:
+        vec1 = np.exp(vec - column_vector(vec.max(axis=1)))
+    except:
+        #print len(vec), type(vec)
+        print "VEC", list(vec - column_vector(vec.max(axis=1)))
+        #print "MAX", -vec.max(axis=1)
+        #print list(vec - column_vector(-vec.max(axis=1)))
+        raise
     res = vec1 / column_vector(np.sum(vec1, axis=1))
     return res
 
