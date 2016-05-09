@@ -15,10 +15,11 @@ def cost_function(W, x, y):
     m = x.shape[0]
     vec = np.dot(x, W);
     sigmoid_activation = np.apply_along_axis(log_softmax, 1, vec)
-    index = [range(0, np.shape(sigmoid_activation)[0]), y]
+    index = [range(0, m), y]
     p = sigmoid_activation[index]
     l = -np.mean(p)
-    return l
+    regularization = 0.5 * np.sum(np.square(W)) # Should omit first class
+    return l + regularization
         
 def compute_gradients(out, y, x):
     """Gradient of cost function over a single example"""
@@ -45,14 +46,16 @@ def indicator_matrix(indexes, width):
     """ Contains all zeros except a 1 on each row at the index of 'indexes' """
     return np.apply_along_axis(lambda y: indicator_array(y, width), 1, column_vector(indexes))
 
-def gradients2(W, x, y):
+def gradients2(W, x, y, reg_lambda=1.0):
     """Gradient of cost function over all examples"""
     C = W.shape[1]
+    M, _ = X.shape
     vec = np.dot(x, W);
     #print vec
     probas = softmax(vec) # M x C
     indicator_y = indicator_matrix(y, C) # M x C
-    gradients = - np.dot((indicator_y - probas).T, x)  # C * N
+    gradients = - np.dot((indicator_y - probas).T, x).T  # C * N
+    gradients += reg_lambda * W 
     return gradients
 
 def predict(W, x):
@@ -79,23 +82,27 @@ def batch_gradient_descent(X, Y, C, l_start=1, converge_percent=0.01, maxiter=10
             if change < 0: # bold driver
                 l /= 2.0
             elif change *100 < converge_percent:
-                return predict(W, X)
+                return W
         l = l * 1.1
-        W -= grads.T * l
+        W -= grads * l
         last_cost = cost
-    return predict(W, X)
+    return W
 
 
 if __name__ == '__main__':
-    N = 10
+    N = 8
     C = 30
-    M = 100
+    M = 1000
     X, Y, factors = gendata(n=N, m=M, c=C, seed=1)
     #X = np.hstack((X, np.ones((M,1)))) # Add column of 1's
 
     def print_progress(i, cost, l):
         print i, cost, l
 
-    Y2 = batch_gradient_descent(X, Y, C, maxiter=1000, progress_callback=print_progress)
+    W = batch_gradient_descent(X, Y, C, maxiter=1000, progress_callback=print_progress)
+    Y2 = predict(W, X)
     print Y == Y2
     print Y
+    print W
+
+
